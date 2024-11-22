@@ -30,7 +30,7 @@ public class XmlToElasticsearch {
                 RestClient.builder(new HttpHost("localhost", 9200, "http")))) {
 
             // Décompresser et analyser le fichier XML dans l'archive ZIP
-            parseAndIndexXmlFromZip(client, "xml.zip");
+            parseAndIndexXmlFromZip(client, "./xml.zip");
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -69,8 +69,12 @@ public class XmlToElasticsearch {
             @Override
             public void endElement(String uri, String localName, String qName) throws SAXException {
                 if ("product".equalsIgnoreCase(qName)) {
+                    // Nettoyage des données
+                    cleanProductData(productData);
+
                     // Envoi du produit à Elasticsearch
                     sendToElasticsearch(client, productData);
+
                     productData.clear();
                 } else {
                     productData.put(qName, content.toString().trim());
@@ -83,6 +87,36 @@ public class XmlToElasticsearch {
             }
         });
     }
+
+    private static void cleanProductData(Map<String, String> productData) {
+        // Nettoyer les balises HTML et décoder les entités HTML
+        productData.replaceAll((key, value) -> {
+            if (value != null) {
+                // Supprimer les balises HTML
+                value = value.replaceAll("\\<.*?\\>", "").trim();
+                // Décoder les entités HTML
+                value = value.replace("&nbsp;", " ")
+                             .replace("&eacute;", "é")
+                             .replace("&agrave;", "à")
+                             .replace("&egrave;", "è")
+                             .replace("&amp;", "&")
+                             .replace("&quot;", "\"")
+                             .replace("&lt;", "<")
+                             .replace("&gt;", ">");
+                return value;
+            }
+            return null;
+        });
+    
+        // Harmoniser les formats pour certains champs
+        if (productData.containsKey("it_display_size_pouces")) {
+            productData.put("it_display_size_pouces", productData.get("it_display_size_pouces").replace(",", "."));
+        }
+    
+        // Supprimer les champs inutiles ou non pertinents si nécessaire
+        productData.remove("warranty_scope"); // Exemple de suppression de champ
+    }
+    
 
     private static void sendToElasticsearch(RestHighLevelClient client, Map<String, String> productData) {
         try {
