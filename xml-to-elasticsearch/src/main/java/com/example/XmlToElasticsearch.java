@@ -22,7 +22,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class XmlToElasticsearch {
-
+// choisir un index qui va etre creer lors du parsing
     private static final String INDEX_NAME = "products";
 
     public static void main(String[] args) {
@@ -56,7 +56,7 @@ public class XmlToElasticsearch {
         SAXParserFactory factory = SAXParserFactory.newInstance();
         SAXParser saxParser = factory.newSAXParser();
 
-        // Handler SAX pour traiter chaque balise <product>
+        // Handler SAX pour traiter chaque balise <product> et s'assurer de ne pas loader les données en mémoire à la fois.
         saxParser.parse(xmlInputStream, new DefaultHandler() {
             Map<String, String> productData = new HashMap<>();
             StringBuilder content = new StringBuilder();
@@ -89,7 +89,7 @@ public class XmlToElasticsearch {
     }
 
     private static void cleanProductData(Map<String, String> productData) {
-        // Nettoyer les balises HTML et décoder les entités HTML
+        // Nettoyer les balises HTML et décoder les entités HTML pour la propreté des données envoyés
         productData.replaceAll((key, value) -> {
             if (value != null) {
                 // Supprimer les balises HTML
@@ -123,7 +123,7 @@ public class XmlToElasticsearch {
             BulkRequest bulkRequest = new BulkRequest();
             bulkRequest.add(new IndexRequest(INDEX_NAME).source(productData, XContentType.JSON));
 
-            // Envoi à Elasticsearch
+            // Envoyer les data à Elasticsearch
             BulkResponse response = client.bulk(bulkRequest, RequestOptions.DEFAULT);
             if (response.hasFailures()) {
                 System.err.println("Erreur d'indexation : " + response.buildFailureMessage());
