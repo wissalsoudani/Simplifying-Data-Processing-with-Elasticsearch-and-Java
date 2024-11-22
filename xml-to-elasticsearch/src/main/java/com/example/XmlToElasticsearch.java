@@ -14,7 +14,10 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+
+import java.io.BufferedInputStream;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,56 +40,72 @@ public class XmlToElasticsearch {
         }
     }
 
+
     private static void parseAndIndexXmlFromZip(RestHighLevelClient client, String zipFilePath) throws Exception {
-        // Ouvrir l'archive ZIP
         try (InputStream fis = new FileInputStream(zipFilePath);
              ZipInputStream zis = new ZipInputStream(fis)) {
-
+    
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
+                System.out.println("Processing entry: " + entry.getName());
+    
                 if (entry.getName().endsWith(".xml")) {
-                    // Analyser chaque fichier XML dans l'archive
-                    parseAndIndexXml(client, zis);
+                    System.out.println("Processing file: " + entry.getName());
+    
+                    // Create a temporary input stream for the current entry
+                    try (InputStream entryStream = new BufferedInputStream(zis)) {
+                        parseAndIndexXml(client, entryStream);
+                    }
+    
+                    // Explicitly close the current ZIP entry
+                    zis.closeEntry();
+                    System.out.println("Entry closed successfully.");
                 }
             }
+        } catch (IOException e) {
+            System.err.println("Error processing ZIP file: " + e.getMessage());
+            throw e;
         }
     }
+    
 
-    private static void parseAndIndexXml(RestHighLevelClient client, InputStream xmlInputStream) throws Exception {
-        SAXParserFactory factory = SAXParserFactory.newInstance();
-        SAXParser saxParser = factory.newSAXParser();
+private static void parseAndIndexXml(RestHighLevelClient client, InputStream xmlInputStream) throws Exception {
+    SAXParserFactory factory = SAXParserFactory.newInstance();
+    SAXParser saxParser = factory.newSAXParser();
 
-        // Handler SAX pour traiter chaque balise <product> et s'assurer de ne pas loader les données en mémoire à la fois.
-        saxParser.parse(xmlInputStream, new DefaultHandler() {
-            Map<String, String> productData = new HashMap<>();
-            StringBuilder content = new StringBuilder();
+    // Use a SAX handler to process the XML file
+    DefaultHandler handler = new DefaultHandler() {
+        Map<String, String> productData = new HashMap<>();
+        StringBuilder content = new StringBuilder();
 
-            @Override
-            public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
-                content.setLength(0); // Réinitialiser le contenu
+        @Override
+        public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
+            content.setLength(0); // Reset content buffer
+        }
+
+        @Override
+        public void endElement(String uri, String localName, String qName) throws SAXException {
+            if ("product".equalsIgnoreCase(qName)) {
+                // Clean and send product data to Elasticsearch
+                cleanProductData(productData);
+                sendToElasticsearch(client, productData);
+
+                productData.clear(); // Reset for the next product
+            } else {
+                productData.put(qName, content.toString().trim());
             }
+        }
 
-            @Override
-            public void endElement(String uri, String localName, String qName) throws SAXException {
-                if ("product".equalsIgnoreCase(qName)) {
-                    // Nettoyage des données
-                    cleanProductData(productData);
+        @Override
+        public void characters(char[] ch, int start, int length) throws SAXException {
+            content.append(ch, start, length);
+        }
+    };
 
-                    // Envoi du produit à Elasticsearch
-                    sendToElasticsearch(client, productData);
+    // Parse the XML stream
+    saxParser.parse(xmlInputStream, handler);
+}
 
-                    productData.clear();
-                } else {
-                    productData.put(qName, content.toString().trim());
-                }
-            }
-
-            @Override
-            public void characters(char[] ch, int start, int length) throws SAXException {
-                content.append(ch, start, length);
-            }
-        });
-    }
 
     private static void cleanProductData(Map<String, String> productData) {
         // Nettoyer les balises HTML et décoder les entités HTML pour la propreté des données envoyés
