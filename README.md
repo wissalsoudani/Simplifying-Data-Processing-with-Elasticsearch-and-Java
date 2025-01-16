@@ -1,7 +1,3 @@
-# Adelan Test Recruitment Java Program
-🚀 **Program developed by Wissal Soudani for the technical recruitment test.**
-
----
 
 ## 📋 Project Description
 This program is an efficient solution to parse and index large XML files into Elasticsearch while adhering to memory and performance constraints.
